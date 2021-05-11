@@ -55,8 +55,9 @@ def _is_docker_build_too_many_requests(cp: CompletedProcess) -> bool:
 
 def docker_build(source_dir: Path, image_name: str,
                  docker_file: Path = None,
-                 timeout: int = 20,
-                 ) -> None:
+                 timeout: float = 30) -> None:
+    start = time.monotonic()
+
     print_header(f'Building docker image {image_name}')
     args = _combine([
         'docker', 'build', '-t', image_name,
@@ -64,15 +65,18 @@ def docker_build(source_dir: Path, image_name: str,
         str(source_dir)
     ])
 
-    for attempt in range(timeout):
+    while True:
         cp = run(args, capture_output=True, encoding='utf-8')
-        if cp.returncode != 0:
-            if attempt < timeout - 1 and _is_docker_build_too_many_requests(cp):
-                print("Got toomanyrequests error. Will retry...")
-                time.sleep(1)
-                continue
-            raise CalledProcessError(cp.returncode, cp.args, cp.stdout,
-                                     cp.stderr)
+        if cp.returncode == 0:
+            return
+        assert cp.returncode != 0
+        if _is_docker_build_too_many_requests(cp) and (
+                time.monotonic() - start) < (timeout - 1):
+            print("Got toomanyrequests error. Will retry...")
+            time.sleep(1)
+            continue
+        raise CalledProcessError(cp.returncode, cp.args, cp.stdout,
+                                 cp.stderr)
 
 
 def docker_run(image_name: str, container_name: str = None,
