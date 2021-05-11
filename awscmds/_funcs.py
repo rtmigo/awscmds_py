@@ -3,11 +3,12 @@
 
 import json
 import re
+import time
 import unittest
 from pathlib import Path
 from typing import List, Union, Optional
 from subprocess import check_call, run, Popen, PIPE, CalledProcessError, \
-    check_output
+    check_output, CompletedProcess
 
 _header_prefix: Optional[str] = None
 
@@ -43,15 +44,35 @@ def _combine(items: List) -> List[str]:
     return args
 
 
+def _is_docker_build_too_many_requests(cp: CompletedProcess) -> bool:
+    # Sometimes in GitHub Actions I get
+    # "Step 1/8 : FROM public.ecr.aws/lambda/python:3.8 AS base-image
+    #  toomanyrequests: Rate exceeded"
+    tmr = 'toomanyrequests: Rate exceeded'
+    # (tmr in cp.stdout or tmr in cp.stderr)
+    return cp.returncode != 0 and tmr in cp.stderr
+
+
 def docker_build(source_dir: Path, image_name: str,
-                 docker_file: Path = None) -> None:
+                 docker_file: Path = None,
+                 timeout: int = 20,
+                 ) -> None:
     print_header(f'Building docker image {image_name}')
     args = _combine([
         'docker', 'build', '-t', image_name,
         ['-f', str(docker_file)] if docker_file else None,
         str(source_dir)
     ])
-    check_call(args)
+
+    for attempt in range(timeout):
+        cp = run(args, capture_output=True, encoding='utf-8')
+        if cp.returncode != 0:
+            if attempt < timeout - 1 and _is_docker_build_too_many_requests(cp):
+                print("Got toomanyrequests error. Will retry...")
+                time.sleep(1)
+                continue
+            raise CalledProcessError(cp.returncode, cp.args, cp.stdout,
+                                     cp.stderr)
 
 
 def docker_run(image_name: str, container_name: str = None,
