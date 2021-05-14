@@ -4,10 +4,12 @@ import json
 from argparse import ArgumentParser
 from enum import IntEnum, auto
 from subprocess import check_call, check_output, Popen, PIPE
-from typing import List
+from typing import List, Callable
 
 
 class Stage(IntEnum):
+    local = auto()
+    docker = auto()
     dev = auto()
     prod = auto()
 
@@ -177,17 +179,26 @@ class LambdaDockerPipeline:
             '--region', self.aws_region,
             '--function-name', func_name))
 
+    def _print_not_testing(self, method: Callable):
+        print(f"{Colors.RED}Not testing. "
+              f"Override {self.__class__.__name__}.{method.__name__} to run "
+              f"this test.{Colors.END}")
+
     def test_docker(self):
-        print(f"{Colors.RED}Not testing Docker. "
-              f"Override Pipeline.test_docker to run tests.{Colors.END}")
+        self._print_not_testing(self.test_docker)
 
     def test_dev(self):
-        print(f"{Colors.RED}Not testing Dev. "
-              f"Override Pipeline.test_dev to run tests.{Colors.END}")
+        self._print_not_testing(self.test_dev)
 
     def test_prod(self):
-        print(f"{Colors.RED}Not testing Dev. "
-              f"Override Pipeline.test_dev to run tests.{Colors.END}")
+        self._print_not_testing(self.test_prod)
+
+    def test_local(self):
+        self._print_not_testing(self.test_local)
+
+    def _test_local(self):
+        self.hdr("Testing Local")
+        self.test_local()
 
     def _test_docker(self):
         self.hdr("Testing Docker")
@@ -210,18 +221,55 @@ class LambdaDockerPipeline:
 
     def main(self):
         parser = ArgumentParser()
-        parser.add_argument('command', choices=['dev', 'prod', 'build'])
+
+        cmd_build = 'build'
+        cmd_update = 'update'
+        cmd_test = 'test'
+
+        subparsers = parser.add_subparsers(dest='command')
+        subparsers.required = True
+
+        subparsers.add_parser(cmd_build,
+                              help="Builds and tests docker image locally")
+
+        test = subparsers.add_parser('test',
+                                     help="Runs tests defined by descendant")
+        test.add_argument('stage',
+                          choices=[Stage.local.name,
+                                   Stage.docker.name,
+                                   Stage.dev.name,
+                                   Stage.prod.name])
+
+        update = subparsers.add_parser(
+            cmd_update,
+            help='Builds docker image and uploads it to Lambda')
+        update.add_argument('stage', choices=[Stage.dev.name, Stage.prod.name])
         args = parser.parse_args()
 
-        if args.command == 'build':
+        if args.command == cmd_update:
+            if args.stage == Stage.dev.name:
+                self._build_and_upload_dev()
+            elif args.stage == Stage.prod.name:
+                self._build_and_upload_dev()
+                self.push_container(Stage.prod)
+                self.update_function(Stage.prod)
+                self.test_prod()
+            else:
+                raise ValueError(args.stage)
+        elif args.command == cmd_build:
             self.build_container()
             self._test_docker()
-        elif args.command == 'dev':
-            self._build_and_upload_dev()
-        elif args.command == 'prod':
-            self._build_and_upload_dev()
-            self.push_container(Stage.prod)
-            self.update_function(Stage.prod)
-            self.test_prod()
+        elif args.command == cmd_test:
+            if args.stage == Stage.dev.name:
+                self._test_dev()
+            elif args.stage == Stage.prod.name:
+                self._test_prod()
+            elif args.stage == Stage.docker.name:
+                self._test_docker()
+            elif args.stage == Stage.local.name:
+                self._test_local()
+            else:
+                raise ValueError(args.stage)
+
         else:
             raise ValueError(args.command)

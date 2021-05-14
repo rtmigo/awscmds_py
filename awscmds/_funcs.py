@@ -197,6 +197,25 @@ def ecr_delete_images_by_json(repo_uri: Union[EcrRepoUri, str],
                 '--image-ids', image_ids_in_json))
 
 
+def ect_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
+    repo_uri = EcrRepoUri(repo_uri)
+    cp = run((
+
+        'aws', 'ecr', 'list-images',
+        '--region', repo_uri.region,
+        '--repository-name', repo_uri.name,
+        '--filter', "tagStatus=UNTAGGED",
+        '--query', 'imageIds[*]',
+        '--output', 'json'
+
+    ), encoding="utf-8", capture_output=True)
+
+    if cp.returncode != 0:
+        raise CalledProcessError(cp.returncode, cp.args,
+                                 cp.stdout, cp.stderr)
+    return cp.stdout
+
+
 def ecr_delete_images_all(repo_uri: str):
     print_header(f"Deleting all images from {str(repo_uri)}")
 
