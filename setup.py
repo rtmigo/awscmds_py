@@ -1,19 +1,36 @@
-from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from typing import Dict, Any
+
 from setuptools import setup
 
-constants = SourceFileLoader('constants',
-                             'awscmds/_constants.py').load_module()
+
+def load_constants(pattern='*/_constants.py') -> Dict[str, Any]:
+    """Finds in the parent dir a single file by the pattern and imports module
+    from it. Returns the dictionary of globals defined in the module."""
+    import importlib.util as ilu
+
+    # finding the _constants.py (or anything defined by the pattern)
+    candidates = list(Path(__file__).parent.glob(pattern))
+    assert len(candidates) == 1, f"Candidates: {candidates}"
+    filename = candidates[0]
+
+    # importing module from `filename`
+    spec = ilu.spec_from_file_location('', filename)
+    module = ilu.module_from_spec(spec)
+    # noinspection Mypy
+    spec.loader.exec_module(module)
+    return module.__dict__
+
+
+constants = load_constants()
 
 setup(
     name="awscmds",
-    version=constants.__dict__['__version__'],
+    version=constants['__version__'],
     author="Artёm IG",
     author_email="ortemeo@gmail.com",
     url='https://github.com/rtmigo/awscmds_py#readme',
 
-
-    #install_requires=['apig_wsgi', 'awslambdaric'],
     packages=['awscmds'],
 
     description="",

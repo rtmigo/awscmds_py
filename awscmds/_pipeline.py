@@ -1,13 +1,12 @@
-# Copyright (c) 2021 Artёm IG <github.com/rtmigo>
+# SPDX-FileCopyrightText: (c) 2021 Artёm IG <github.com/rtmigo>
+# SPDX-License-Identifier: MIT
 
-import json
 import sys
-from argparse import ArgumentParser
 from enum import IntEnum, auto
 from inspect import signature
 from pathlib import Path
-from subprocess import check_call, check_output, Popen, PIPE
-from typing import List, Callable, Union
+from typing import Callable, Union
+
 from ._funcs import docker_build, docker_push_to_ecr, \
     ecr_delete_images_untagged, lambda_function_update, \
     lambda_function_wait_updated
