@@ -49,8 +49,6 @@ class LambdaDockerPipeline:
 
         self.ecr_host = erc_host
         self.ecr_repo_name = ecr_repo_name
-        # self.ecr_dev_image_uri = f"{erc_host}/{ecr_repo_name}:dev"
-        # self.ecr_prod_image_uri = f"{erc_host}/{ecr_repo_name}:prod"
 
         # Lambda Functions
         self.lambda_func_name_dev = lambda_func_name_dev
@@ -141,22 +139,6 @@ class LambdaDockerPipeline:
     def test_local(self):
         self._print_not_testing(self.test_local)
 
-    # def _test_local(self):
-    #     self.header("Testing Local")
-    #     self.test_local()
-    #
-    # def _test_docker(self):
-    #     self.header("Testing Docker")
-    #     self.test_docker()
-    #
-    # def _test_dev(self):
-    #     self.header("Testing Dev")
-    #     self.test_dev()
-    #
-    # def _test_prod(self):
-    #     self.header("Testing Prod")
-    #     self.test_prod()
-
     def build_docker(self):
         self._build_container()
         self.test_docker()
@@ -198,8 +180,6 @@ class LambdaDockerPipeline:
         for method in methods:
             if len(sys.argv) >= 2 and sys.argv[1] == method.__name__:
                 method()
-                exit(1)
+                exit(2)
 
         print(f"Usage: {sys.argv[0]} [{' '.join(m.__name__ for m in methods)}]")
-
-
