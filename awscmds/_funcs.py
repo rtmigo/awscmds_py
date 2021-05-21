@@ -86,6 +86,7 @@ def docker_run(image_name: str, container_name: str = None,
     print_header(
         f"Starting docker image {image_name} (container: {container_name})")
 
+    port_mapping: Optional[str]
     if port_host is not None or port_docker is not None:
         if port_host is None or port_docker is None:
             raise ValueError(
@@ -114,6 +115,8 @@ class EcrRepoUri:
         self.uri = uri
 
         m = re.match(r'(.+)/([^@:]+)(?:[@:](.+))?', uri)
+        if m is None:
+            raise ValueError(uri)
         self.host = str(m.group(1))
         self.name = str(m.group(2))
         self.tag = str(m.group(3)) if m.group(3) else None
@@ -169,6 +172,8 @@ assert ecr_repo_uri_to_region(
 
 def _get_digest(output: str) -> str:
     m = re.search(r'digest: (sha256:[0-9a-z]+)', output)
+    if not m:
+        raise ValueError(m)
     return str(m.group(1))
 
 
@@ -197,8 +202,9 @@ def ecr_delete_images_by_json(repo_uri: Union[EcrRepoUri, str],
                 '--image-ids', image_ids_in_json))
 
 
-def ect_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
-    repo_uri = EcrRepoUri(repo_uri)
+def ecr_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
+    if isinstance(repo_uri, str):
+        repo_uri = EcrRepoUri(repo_uri)
     cp = run((
 
         'aws', 'ecr', 'list-images',
@@ -216,10 +222,16 @@ def ect_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
     return cp.stdout
 
 
-def ecr_delete_images_all(repo_uri: str):
+def ecr_delete_images_untagged(repo_uri: Union[str, EcrRepoUri]):
+    js = ecr_get_untagged_images_json(repo_uri)
+    return ecr_delete_images_by_json(repo_uri, js)
+
+
+def ecr_delete_images_all(repo_uri: Union[EcrRepoUri, str]):
     print_header(f"Deleting all images from {str(repo_uri)}")
 
-    repo_uri = EcrRepoUri(repo_uri)
+    if isinstance(repo_uri, str):
+        repo_uri = EcrRepoUri(repo_uri)
 
     js = check_output((
         'aws', 'ecr', 'list-images',

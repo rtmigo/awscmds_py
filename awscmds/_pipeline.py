@@ -1,10 +1,16 @@
 # Copyright (c) 2021 Artёm IG <github.com/rtmigo>
 
 import json
+import sys
 from argparse import ArgumentParser
 from enum import IntEnum, auto
+from inspect import signature
+from pathlib import Path
 from subprocess import check_call, check_output, Popen, PIPE
-from typing import List, Callable
+from typing import List, Callable, Union
+from ._funcs import docker_build, docker_push_to_ecr, \
+    ecr_delete_images_untagged, lambda_function_update, \
+    lambda_function_wait_updated
 
 
 class Stage(IntEnum):
@@ -32,7 +38,7 @@ class LambdaDockerPipeline:
 
                  aws_region: str = None,
                  docker_source_dir: str = ".",
-                 docker_file: str = None):
+                 docker_file: Union[None, str, Path] = None):
 
         self.docker_image_name = docker_image_name
 
@@ -52,10 +58,11 @@ class LambdaDockerPipeline:
         self.lambda_func_name_prod = lambda_func_name_prod
 
         if docker_file is None:
-            docker_file = f'{docker_source_dir}/Dockerfile'
-        self.docker_file = docker_file
+            self.docker_file = Path(f'{docker_source_dir}/Dockerfile')
+        else:
+            self.docker_file = Path(docker_file)
 
-    def hdr(self, s: str) -> None:
+    def header(self, s: str) -> None:
         print()
         print('/' * 80)
         print('  ' + s.upper())
@@ -66,16 +73,13 @@ class LambdaDockerPipeline:
     def ecr_region(self):
         return self.ecr_host.split('.')[-3]
 
-    def build_container(self):
-        # todo call func
-        # builds new docker image and stores it locally
-        self.hdr("Building Docker image")
+    def _build_container(self):
+        self.header("Building Docker image")
+        docker_build(image_name=self.docker_image_name,
+                     docker_file=self.docker_file,
+                     source_dir=Path('.'))
 
-        check_call(
-            ['docker', 'build', '-t', self.docker_image_name, '-f',
-             self.docker_file, '.'])
-
-    def ecr_image_uri(self, stage: Stage):
+    def _ecr_image_uri(self, stage: Stage):
         if stage == Stage.dev:
             return f"{self.ecr_host}/{self.ecr_repo_name}:dev"
         elif stage == Stage.prod:
@@ -83,7 +87,7 @@ class LambdaDockerPipeline:
         else:
             raise ValueError(stage)
 
-    def lambda_func_name(self, stage: Stage):
+    def _lambda_func_name(self, stage: Stage):
         if stage == Stage.dev:
             return self.lambda_func_name_dev
         elif stage == Stage.prod:
@@ -91,63 +95,23 @@ class LambdaDockerPipeline:
         else:
             raise ValueError(stage)
 
-    def push_container(self, stage: Stage):
-        # todo call func
+    def _push_container(self, stage: Stage):
         # pushes the last built image to Amazon ECR
+        self.header(f"Pushing Docker image {stage.name}")
 
-        self.hdr(f"Pushing Docker image {stage.name}")
+        docker_push_to_ecr(
+            docker_image=self.docker_image_name,
+            repo_uri=self._ecr_image_uri(stage))
 
-        image_uri = self.ecr_image_uri(stage)
-        print(f"Image URI: {image_uri}")
+    def _delete_untagged_ecr_images(self):
+        self.header('Deleting untagged ECR images')
+        ecr_delete_images_untagged(self.ecr_repo_name)
 
-        with Popen(
-                ('aws', 'ecr', 'get-login-password',
-                 '--region', self.aws_region),
-                stdout=PIPE) as get_password:
-            check_call(
-                ('docker', 'login', '--username', 'AWS', '--password-stdin',
-                 self.ecr_host),
-                stdin=get_password.stdout)
+    def _update_function(self, stage: Stage):
+        func_name = self._lambda_func_name(stage)
+        image = self._ecr_image_uri(stage)
 
-        check_call((
-            'docker', 'tag', f"{self.docker_image_name}:latest",
-            image_uri
-        ))
-
-        check_call((
-            'docker', 'push', image_uri
-        ))
-
-    def delete_untagged_ecr_images(self):
-        # todo call func
-        self.hdr('Deleting untagged ECR images')
-
-        js = check_output((
-
-            'aws', 'ecr', 'list-images',
-            '--region', self.ecr_region,
-            '--repository-name', self.ecr_repo_name,
-            '--filter', "tagStatus=UNTAGGED",
-            '--query', 'imageIds[*]',
-            '--output', 'json'
-
-        ), encoding="utf-8")
-
-        if json.loads(js):
-            check_call((
-                'aws', 'ecr', 'batch-delete-image',
-                '--region', self.ecr_region,
-                '--repository-name', self.ecr_repo_name,
-                '--image-ids', js))
-        else:
-            print("Nothing to delete")
-
-    def update_function(self, stage: Stage):
-        # todo call func
-        func_name = self.lambda_func_name(stage)
-        image = self.ecr_image_uri(stage)
-
-        self.hdr(f"Updating function {stage.name}")
+        self.header(f"Updating function {stage.name}")
 
         print(f"Function name: {func_name}")
         print(f"Image: {image}")
@@ -156,28 +120,10 @@ class LambdaDockerPipeline:
         # when we call update-function-code twice in a row,
         # we can get "The operation cannot be performed at this time.
         # An update is in progress for resource". So we'll wait here...
-        self._wait_last_update_status(func_name)
+        lambda_function_wait_updated(self.aws_region, func_name)
 
-        check_call((
-            'aws', 'lambda', 'update-function-code',
-            '--region', self.aws_region,
-            '--function-name', func_name,
-            '--image-uri', image
-        ))
-
-        self._wait_last_update_status(func_name)
-
-    def _wait_last_update_status(self, func_name: str):
-        # todo call func
-        print("Waiting for the function's LastUpdateStatus to be Successful")
-        # Waits for the function's LastUpdateStatus to be Successful.
-        # It will poll every 5 seconds until a successful state has
-        # been reached. This will exit with a return code of 255 after
-        # 60 failed checks
-        check_call((
-            'aws', 'lambda', 'wait', 'function-updated',
-            '--region', self.aws_region,
-            '--function-name', func_name))
+        lambda_function_update(self.aws_region, func_name, image)
+        lambda_function_wait_updated(self.aws_region, func_name)
 
     def _print_not_testing(self, method: Callable):
         print(f"{Colors.RED}Not testing. "
@@ -196,80 +142,65 @@ class LambdaDockerPipeline:
     def test_local(self):
         self._print_not_testing(self.test_local)
 
-    def _test_local(self):
-        self.hdr("Testing Local")
-        self.test_local()
+    # def _test_local(self):
+    #     self.header("Testing Local")
+    #     self.test_local()
+    #
+    # def _test_docker(self):
+    #     self.header("Testing Docker")
+    #     self.test_docker()
+    #
+    # def _test_dev(self):
+    #     self.header("Testing Dev")
+    #     self.test_dev()
+    #
+    # def _test_prod(self):
+    #     self.header("Testing Prod")
+    #     self.test_prod()
 
-    def _test_docker(self):
-        self.hdr("Testing Docker")
+    def build_docker(self):
+        self._build_container()
         self.test_docker()
 
-    def _test_dev(self):
-        self.hdr("Testing Dev")
+    def build_dev(self):
+        self.build_docker()
+        self._push_container(Stage.dev)
+        self._update_function(Stage.dev)
         self.test_dev()
 
-    def _test_prod(self):
-        self.hdr("Testing Prod")
+    def build_prod(self):
+        self.build_dev()
+        self._push_container(Stage.prod)
+        self._update_function(Stage.prod)
         self.test_prod()
 
-    def _build_and_upload_dev(self):
-        self.build_container()
-        self._test_docker()
-        self.push_container(Stage.dev)
-        self.update_function(Stage.dev)
-        self._test_dev()
-
     def main(self):
-        parser = ArgumentParser()
 
-        cmd_build = 'build'
-        cmd_update = 'update'
-        cmd_test = 'test'
+        # finding all public methods that do not require args
+        methods = []
+        for x in dir(self):
+            method = getattr(self, x)
+            # skipping non-methods
+            if not callable(method):
+                continue
+            # skipping private methods
+            if method.__name__.startswith("_"):
+                continue
+            # skipping constructor
+            if method.__name__ == self.__class__.__name__:
+                continue
+            # skipping `main`
+            if method.__name__ == self.main.__name__:
+                continue
+            if signature(method).parameters:  # if has args
+                continue
+            methods.append(method)
 
-        subparsers = parser.add_subparsers(dest='command')
-        subparsers.required = True
+        for method in methods:
+            if len(sys.argv) >= 2 and sys.argv[1] == method.__name__:
+                method()
+                exit(1)
 
-        subparsers.add_parser(cmd_build,
-                              help="Builds and tests docker image locally")
+        print(f"Usage: {sys.argv[0]} [{' '.join(m.__name__ for m in methods)}]")
 
-        test = subparsers.add_parser('test',
-                                     help="Runs tests defined by descendant")
-        test.add_argument('stage',
-                          choices=[Stage.local.name,
-                                   Stage.docker.name,
-                                   Stage.dev.name,
-                                   Stage.prod.name])
 
-        update = subparsers.add_parser(
-            cmd_update,
-            help='Builds docker image and uploads it to Lambda')
-        update.add_argument('stage', choices=[Stage.dev.name, Stage.prod.name])
-        args = parser.parse_args()
-
-        if args.command == cmd_update:
-            if args.stage == Stage.dev.name:
-                self._build_and_upload_dev()
-            elif args.stage == Stage.prod.name:
-                self._build_and_upload_dev()
-                self.push_container(Stage.prod)
-                self.update_function(Stage.prod)
-                self.test_prod()
-            else:
-                raise ValueError(args.stage)
-        elif args.command == cmd_build:
-            self.build_container()
-            self._test_docker()
-        elif args.command == cmd_test:
-            if args.stage == Stage.dev.name:
-                self._test_dev()
-            elif args.stage == Stage.prod.name:
-                self._test_prod()
-            elif args.stage == Stage.docker.name:
-                self._test_docker()
-            elif args.stage == Stage.local.name:
-                self._test_local()
-            else:
-                raise ValueError(args.stage)
-
-        else:
-            raise ValueError(args.command)
