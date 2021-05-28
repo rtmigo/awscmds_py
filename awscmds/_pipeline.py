@@ -1,12 +1,10 @@
 # SPDX-FileCopyrightText: (c) 2021 Artёm IG <github.com/rtmigo>
 # SPDX-License-Identifier: MIT
-
-import sys
 from enum import IntEnum, auto
-from inspect import signature
 from pathlib import Path
 from typing import Callable, Union
 
+from ._cli_methods import methods_cli
 from ._funcs import docker_build, docker_push_to_ecr, \
     ecr_delete_images_untagged, lambda_function_update, \
     lambda_function_wait_updated
@@ -134,6 +132,7 @@ class LambdaDockerPipeline:
         self._print_not_testing(self.test_dev)
 
     def test_prod(self):
+        """Tests the app deployed on production server."""
         self._print_not_testing(self.test_prod)
 
     def test_local(self):
@@ -156,30 +155,4 @@ class LambdaDockerPipeline:
         self.test_prod()
 
     def main(self):
-
-        # finding all public methods that do not require args
-        methods = []
-        for x in dir(self):
-            method = getattr(self, x)
-            # skipping non-methods
-            if not callable(method):
-                continue
-            # skipping private methods
-            if method.__name__.startswith("_"):
-                continue
-            # skipping constructor
-            if method.__name__ == self.__class__.__name__:
-                continue
-            # skipping `main`
-            if method.__name__ == self.main.__name__:
-                continue
-            if signature(method).parameters:  # if has args
-                continue
-            methods.append(method)
-
-        for method in methods:
-            if len(sys.argv) >= 2 and sys.argv[1] == method.__name__:
-                method()
-                exit(2)
-
-        print(f"Usage: {sys.argv[0]} [{' '.join(m.__name__ for m in methods)}]")
+        methods_cli(self)
