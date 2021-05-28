@@ -130,7 +130,7 @@ class EcrRepoUri:
         return self.uri
 
 
-class TestEctRepoUri(unittest.TestCase):
+class TestEcrRepoUri(unittest.TestCase):
     def test_with_tag(self):
         src = '1253812538.dkr.ecr.us-east-1.amazonaws.com/abc_x1:mytag'
         uri = EcrRepoUri(src)
@@ -274,7 +274,8 @@ def docker_push_to_ecr(docker_image: str,
 
     check_call((
         'docker', 'tag', docker_image,
-        repo_uri.uri_without_tag
+        # repo_uri.uri_without_tag ?!
+        repo_uri.uri
     ))
 
     cp = run((
@@ -307,13 +308,14 @@ def lambda_function_wait_updated(aws_region: str, func_name: str):
         '--function-name', func_name))
 
 
-def lambda_function_update(aws_region: str, func_name: str, ecr_image_uri: str):
+def lambda_function_update(aws_region: str, func_name: str,
+                           ecr_image_uri: Union[EcrRepoUri, str]):
     # ecr_image_uri can be an uri with hash code:
     # 61298361286.dkr.ecr.us-east-1.amazonaws.com/imagename@sha256:d13b68bf5763e3cf8b9898d4c2b5000ad538e8d4155ef80686e0c3f04322c9af
 
-    print_header(f"Updating function {func_name}")
+    ecr_image_uri = str(ecr_image_uri)
 
-    print(f"Function: {func_name} at {aws_region}")
+    print(f"Updating function {func_name} at {aws_region}")
     print(f"Image: {ecr_image_uri}")
     print()
 
@@ -330,7 +332,7 @@ def lambda_function_update(aws_region: str, func_name: str, ecr_image_uri: str):
     ))
 
     lambda_function_wait_updated(aws_region, func_name)
-    print_header(f"Function {func_name} updated")
+    print(f"Function {func_name} updated")
 
 
 if __name__ == "__main__":
