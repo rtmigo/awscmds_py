@@ -7,7 +7,7 @@ from typing import Callable, Union
 from ._cli_methods import methods_cli
 from ._funcs import docker_build, docker_push_to_ecr, \
     ecr_delete_images_untagged, lambda_function_update, \
-    lambda_function_wait_updated
+    lambda_function_wait_updated, EcrRepoUri
 
 
 class Stage(IntEnum):
@@ -27,7 +27,7 @@ class LambdaDockerPipeline:
     def __init__(self,
                  docker_image_name: str,
                  # Elastic Container Registry
-                 erc_host: str,
+                 ecr_host: str,
                  ecr_repo_name: str,
                  # Lambda Functions
                  lambda_func_name_dev: str,
@@ -42,10 +42,10 @@ class LambdaDockerPipeline:
         if aws_region:
             self.aws_region = aws_region
         else:
-            self.aws_region = erc_host.split('.')[-3]
+            self.aws_region = ecr_host.split('.')[-3]
             assert self.aws_region[-1].isdigit()  # "us-east-1"
 
-        self.ecr_host = erc_host
+        self.ecr_host = ecr_host
         self.ecr_repo_name = ecr_repo_name
 
         # Lambda Functions
@@ -74,11 +74,11 @@ class LambdaDockerPipeline:
                      docker_file=self.docker_file,
                      source_dir=Path('.'))
 
-    def _ecr_image_uri(self, stage: Stage):
+    def _ecr_image_uri(self, stage: Stage) -> EcrRepoUri:
         if stage == Stage.dev:
-            return f"{self.ecr_host}/{self.ecr_repo_name}:dev"
+            return EcrRepoUri(f"{self.ecr_host}/{self.ecr_repo_name}:dev")
         elif stage == Stage.prod:
-            return f"{self.ecr_host}/{self.ecr_repo_name}:prod"
+            return EcrRepoUri(f"{self.ecr_host}/{self.ecr_repo_name}:prod")
         else:
             raise ValueError(stage)
 
@@ -112,13 +112,10 @@ class LambdaDockerPipeline:
         print(f"Image: {image}")
         print()
 
-        # when we call update-function-code twice in a row,
-        # we can get "The operation cannot be performed at this time.
-        # An update is in progress for resource". So we'll wait here...
-        lambda_function_wait_updated(self.aws_region, func_name)
+        print("Removing untagged images from ECR...")
+        ecr_delete_images_untagged(image.uri_without_tag)
 
         lambda_function_update(self.aws_region, func_name, image)
-        lambda_function_wait_updated(self.aws_region, func_name)
 
     def _print_not_testing(self, method: Callable):
         print(f"{Colors.RED}Not testing. "
