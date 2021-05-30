@@ -336,23 +336,34 @@ def lambda_function_update(aws_region: str, func_name: str,
     print(f"Function {func_name} updated")
 
 
+def aws_get_default_credentials_file_path() -> Path:
+    # https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
+    # 2021: The credentials file is located at ~/.aws/credentials on Linux or macOS,
+    # or at C:\Users\USERNAME\.aws\credentials on Windows.
+
+    return Path.home() / '.aws' / 'credentials'
+
+
 def aws_create_credentials_file(
         access_key_id: str,
         secret_access_key: str,
-        overwrite: bool = False) -> Path:
+        overwrite: bool = False,
+        file: Path = None
+) -> Path:
     """Creates ~/.aws/credentials file with the values provided."""
 
-    aws_credentials_file = Path.home() / '.aws' / 'credentials'
-    if not overwrite and aws_credentials_file.exists():
+    file = file or aws_get_default_credentials_file_path()
+
+    if not overwrite and file.exists():
         raise FileExistsError
-    aws_credentials_file.parent.mkdir(exist_ok=True, parents=True)
+    file.parent.mkdir(exist_ok=True, parents=True)
     txt = f'''
         [default]
         aws_access_key_id = {access_key_id}
         aws_secret_access_key = {secret_access_key}
     '''
-    aws_credentials_file.write_text(textwrap.dedent(txt).strip())
-    return aws_credentials_file
+    file.write_text(textwrap.dedent(txt).strip())
+    return file
 
 
 if __name__ == "__main__":
