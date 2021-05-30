@@ -117,30 +117,38 @@ class LambdaDockerPipeline:
 
         lambda_function_update(self.aws_region, func_name, image)
 
-    def _print_not_testing(self, method: Callable):
-        print(f"{Colors.RED}Not testing. "
-              f"Override {self.__class__.__name__}.{method.__name__} to run "
-              f"this test.{Colors.END}")
+    def _print_not_overridden(self, method: Callable):
+        print(
+            f"{Colors.RED}Method {self.__class__.__name__}.{method.__name__}.{Colors.END} is not overridden.")
+
+    def lint(self):
+        self._print_not_overridden(self.lint)
 
     def test_docker(self):
-        self._print_not_testing(self.test_docker)
+        self._print_not_overridden(self.test_docker)
 
     def test_dev(self):
-        self._print_not_testing(self.test_dev)
+        self._print_not_overridden(self.test_dev)
 
     def test_prod(self):
-        """Tests the app deployed on production server."""
-        self._print_not_testing(self.test_prod)
+        """Must test the app deployed on production server."""
+        self._print_not_overridden(self.test_prod)
 
     def test_local(self):
-        self._print_not_testing(self.test_local)
+        """Must to run lint and unit tests."""
+        self._print_not_overridden(self.test_local)
 
     def build_docker(self):
+
         self._build_container()
         self.test_docker()
 
     def build_dev(self):
-        self.build_docker()
+        self.test_local()
+
+        self._build_container()
+        self.test_docker()
+
         self._push_container(Stage.dev)
         self._update_function(Stage.dev)
         self.test_dev()
