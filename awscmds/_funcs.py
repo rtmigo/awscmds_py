@@ -339,7 +339,7 @@ def lambda_function_update(aws_region: str, func_name: str,
 def aws_create_credentials_file(
         access_key_id: str,
         secret_access_key: str,
-        overwrite: bool = False):
+        overwrite: bool = False) -> Path:
     """Creates ~/.aws/credentials file with the values provided."""
 
     aws_credentials_file = Path.home() / '.aws' / 'credentials'
@@ -352,6 +352,7 @@ def aws_create_credentials_file(
         aws_secret_access_key = {secret_access_key}
     '''
     aws_credentials_file.write_text(textwrap.dedent(txt).strip())
+    return aws_credentials_file
 
 
 if __name__ == "__main__":
