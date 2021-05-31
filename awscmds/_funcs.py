@@ -7,28 +7,36 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
-from typing import List, Union, Optional
 from subprocess import check_call, run, Popen, PIPE, CalledProcessError, \
     check_output, CompletedProcess
-
-_header_prefix: Optional[str] = None
-
-
-def print_header(s: str) -> None:
-    global _header_prefix
-    print()
-    print('/' * 80)
-    if _header_prefix is not None:
-        print('  ' + _header_prefix)
-
-    print('  ' + s.upper())
-    print('/' * 80)
-    print()
+from typing import List, Union, Optional
 
 
-def set_header_prefix(suffix: str):
-    global _header_prefix
-    _header_prefix = suffix
+################################################################################
+
+class HeaderPrinter:
+    prefix: Optional[str] = None
+
+    @classmethod
+    def print_header(cls, s: str) -> None:
+        print()
+        print('/' * 80)
+        if cls.prefix is not None:
+            print('  ' + cls.prefix)
+
+        print('  ' + s.upper())
+        print('/' * 80)
+        print()
+
+
+print_header = HeaderPrinter.print_header
+
+
+def set_header_prefix(prefix: str):
+    HeaderPrinter.prefix = prefix
+
+
+################################################################################
 
 
 def _combine(items: List) -> List[str]:
@@ -36,7 +44,7 @@ def _combine(items: List) -> List[str]:
     for item in items:
         if isinstance(item, str):
             args.append(item)
-        elif isinstance(item, list) or isinstance(item, tuple):
+        elif isinstance(item, (list, tuple)):
             args.extend(item)
         elif item is None:
             continue
@@ -67,6 +75,7 @@ def docker_build(source_dir: Path, image_name: str,
     ])
 
     while True:
+        # pylint: disable=subprocess-run-check
         cp = run(args, capture_output=True, encoding='utf-8')
         if cp.returncode == 0:
             return
@@ -206,8 +215,8 @@ def ecr_delete_images_by_json(repo_uri: Union[EcrRepoUri, str],
 def ecr_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
     if isinstance(repo_uri, str):
         repo_uri = EcrRepoUri(repo_uri)
-    cp = run((
 
+    cp = run((
         'aws', 'ecr', 'list-images',
         '--region', repo_uri.region,
         '--repository-name', repo_uri.name,
@@ -215,11 +224,11 @@ def ecr_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
         '--query', 'imageIds[*]',
         '--output', 'json'
 
-    ), encoding="utf-8", capture_output=True)
+    ), encoding="utf-8", capture_output=True, check=True)
 
-    if cp.returncode != 0:
-        raise CalledProcessError(cp.returncode, cp.args,
-                                 cp.stdout, cp.stderr)
+    # if cp.returncode != 0:
+    #     raise CalledProcessError(cp.returncode, cp.args,
+    #                              cp.stdout, cp.stderr)
     return cp.stdout
 
 
@@ -279,6 +288,7 @@ def docker_push_to_ecr(docker_image: str,
         repo_uri.uri
     ))
 
+    # pylint: disable=subprocess-run-check
     cp = run((
         'docker', 'push', repo_uri.uri
     ),

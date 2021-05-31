@@ -1,5 +1,6 @@
 import inspect
-import sys, os
+import os
+import sys
 import textwrap
 from inspect import signature
 from typing import Callable, Optional
