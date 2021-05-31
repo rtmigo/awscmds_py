@@ -7,7 +7,7 @@ from typing import Callable, Union
 from ._cli_methods import methods_cli
 from ._funcs import docker_build, docker_push_to_ecr, \
     ecr_delete_images_untagged, lambda_function_update, \
-    lambda_function_wait_updated, EcrRepoUri
+    EcrRepoUri
 
 
 class Stage(IntEnum):
