@@ -348,8 +348,7 @@ def aws_create_credentials_file(
         access_key_id: str,
         secret_access_key: str,
         overwrite: bool = False,
-        file: Path = None
-) -> Path:
+        file: Path = None) -> Path:
     """Creates ~/.aws/credentials file with the values provided."""
 
     file = file or aws_get_default_credentials_file_path()
@@ -364,6 +363,32 @@ def aws_create_credentials_file(
     '''
     file.write_text(textwrap.dedent(txt).strip())
     return file
+
+
+def aws_create_credentials_file_on_need(
+        access_key_id: Optional[str],
+        secret_access_key: Optional[str]) -> Path:
+    """If there are no ~/.aws/credentials file, this function will try to
+    create it from the arguments.
+
+    It can be used in simulated environments such as GitHub Actions.
+
+    Sample usage:
+        file = aws_create_credentials_file_on_need(
+            os.environ.get("AWS_MY_ACCESS_KEY_ID"),
+            os.environ.get("AWS_MY_SECRET_ACCESS_KEY"))
+    """
+    aws_cred_file = aws_get_default_credentials_file_path()
+    if not aws_cred_file.exists():
+        if access_key_id is None:
+            raise ValueError('access_key_id is None, '
+                             'and no credentials file')
+        if secret_access_key is None:
+            raise ValueError('secret_access_key is None, '
+                             'and no credentials file')
+        aws_create_credentials_file(access_key_id, secret_access_key)
+    assert aws_cred_file.exists()
+    return aws_cred_file
 
 
 if __name__ == "__main__":
