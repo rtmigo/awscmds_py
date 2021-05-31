@@ -3,13 +3,14 @@
 
 import json
 import re
+import sys
 import textwrap
 import time
 import unittest
 from pathlib import Path
-from subprocess import check_call, run, Popen, PIPE, CalledProcessError, \
-    check_output, CompletedProcess
-from typing import List, Union, Optional
+from subprocess import Popen, PIPE, CalledProcessError, \
+    check_output, CompletedProcess, STDOUT
+from typing import List, Union, Optional, Sequence, IO, Any
 
 
 ################################################################################
@@ -37,6 +38,43 @@ def set_header_prefix(prefix: str):
 
 
 ################################################################################
+
+def runcp(args: Sequence[str],
+          check=False,
+          stdin: Optional[IO[Any]] = None) -> CompletedProcess:
+    stdout_lines = []
+    with Popen(args,
+               stdout=PIPE,
+               bufsize=1,
+               stderr=STDOUT,
+               stdin=stdin,
+               encoding=sys.stdout.encoding,
+               errors='replace'
+               ) as process:
+        assert process.stdout is not None
+
+        while True:
+            realtime_output = process.stdout.readline()
+            assert isinstance(realtime_output, str)
+            stdout_lines.append(realtime_output)
+            if realtime_output == '' and process.poll() is not None:
+                break
+            # if realtime_output:
+            print(realtime_output, flush=True, end='')
+
+        exit_code = process.wait()
+
+        if check and exit_code != 0:
+            raise CalledProcessError(exit_code, args)
+        return CompletedProcess(args=args, returncode=exit_code,
+                                stdout='\n'.join(stdout_lines))
+
+    ################################################################################
+
+
+def check_call_rt(args: Sequence[str], stdin=None):
+    print("ZZZ")
+    return runcp(args, check=True, stdin=stdin)
 
 
 def _combine(items: List) -> List[str]:
@@ -76,7 +114,7 @@ def docker_build(source_dir: Path, image_name: str,
 
     while True:
         # pylint: disable=subprocess-run-check
-        cp = run(args, capture_output=True, encoding='utf-8')
+        cp = runcp(args)  # , capture_output=True, encoding='utf-8'
         if cp.returncode == 0:
             return
         assert cp.returncode != 0
@@ -112,12 +150,12 @@ def docker_run(image_name: str, container_name: str = None,
         ('--name', container_name) if container_name else None,
         image_name])
 
-    check_call(command)
+    check_call_rt(command)
 
 
 def docker_stop(container_name: str):
     print_header(f"Stopping docker container {container_name}")
-    check_call(('docker', 'container', 'stop', container_name))
+    check_call_rt(('docker', 'container', 'stop', container_name))
 
 
 class EcrRepoUri:
@@ -206,17 +244,17 @@ def ecr_delete_images_by_json(repo_uri: Union[EcrRepoUri, str],
         print("Nothing to delete")
         return
 
-    check_call(('aws', 'ecr', 'batch-delete-image',
-                '--region', repo_uri.region,
-                '--repository-name', repo_uri.name,
-                '--image-ids', image_ids_in_json))
+    check_call_rt(('aws', 'ecr', 'batch-delete-image',
+                   '--region', repo_uri.region,
+                   '--repository-name', repo_uri.name,
+                   '--image-ids', image_ids_in_json))
 
 
 def ecr_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
     if isinstance(repo_uri, str):
         repo_uri = EcrRepoUri(repo_uri)
 
-    cp = run((
+    cp = runcp((
         'aws', 'ecr', 'list-images',
         '--region', repo_uri.region,
         '--repository-name', repo_uri.name,
@@ -224,7 +262,7 @@ def ecr_get_untagged_images_json(repo_uri: Union[str, EcrRepoUri]) -> str:
         '--query', 'imageIds[*]',
         '--output', 'json'
 
-    ), encoding="utf-8", capture_output=True, check=True)
+    ), check=True)
 
     # if cp.returncode != 0:
     #     raise CalledProcessError(cp.returncode, cp.args,
@@ -275,25 +313,23 @@ def docker_push_to_ecr(docker_image: str,
             ('aws', 'ecr', 'get-login-password',
              '--region', repo_uri.region),
             stdout=PIPE) as get_password:
-        check_call(
+        check_call_rt(
             ('docker', 'login',
              '--username', 'AWS',
              '--password-stdin',
              repo_uri.host),
             stdin=get_password.stdout)
 
-    check_call((
+    check_call_rt((
         'docker', 'tag', docker_image,
         # repo_uri.uri_without_tag ?!
         repo_uri.uri
     ))
 
     # pylint: disable=subprocess-run-check
-    cp = run((
+    cp = runcp((
         'docker', 'push', repo_uri.uri
-    ),
-        capture_output=True,
-        encoding='utf-8')
+    ))
     if cp.returncode != 0:
         print("Captured before error:")
         print("stdout:", cp.stdout)
@@ -313,7 +349,7 @@ def lambda_function_wait_updated(aws_region: str, func_name: str):
     # 60 failed checks
     print(f"Waiting for successful update status "
           f"of {func_name} at {aws_region}", flush=True)
-    check_call((
+    check_call_rt((
         'aws', 'lambda', 'wait', 'function-updated',
         '--region', aws_region,
         '--function-name', func_name))
@@ -335,7 +371,7 @@ def lambda_function_update(aws_region: str, func_name: str,
     # An update is in progress for resource". So we'll wait here...
     lambda_function_wait_updated(aws_region, func_name)
 
-    check_call((
+    check_call_rt((
         'aws', 'lambda', 'update-function-code',
         '--region', aws_region,
         '--function-name', func_name,

@@ -15,6 +15,7 @@ if __name__ == "__main__":
                      'aws_create_credentials_file',
                      'aws_get_default_credentials_file_path',
                      'aws_create_credentials_file_on_need',
+                     'runcp',
                      'LambdaDockerPipeline',
                      'Stage']:
             pkg.run_python_code(f'from awscmds import {name}')
