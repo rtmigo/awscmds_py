@@ -67,10 +67,12 @@ def runcp(args: Sequence[str],
 
         exit_code = process.wait()
 
-        if check and exit_code != 0:
-            raise CalledProcessError(exit_code, args)
-
         stdout_text = '\n'.join(stdout_lines)
+
+        if check and exit_code != 0:
+            raise CalledProcessError(returncode=exit_code, cmd=args,
+                                     output=stdout_text)
+
         return CompletedProcess(args=args, returncode=exit_code,
                                 stdout=stdout_text)
 
