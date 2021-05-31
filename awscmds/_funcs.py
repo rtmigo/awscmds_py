@@ -41,39 +41,44 @@ def set_header_prefix(prefix: str):
 
 def runcp(args: Sequence[str],
           check=False,
-          stdin: Optional[IO[Any]] = None) -> CompletedProcess:
+          stdin: Optional[IO[Any]] = None,
+          encoding: str = sys.stdout.encoding,
+          errors='replace'
+          ) -> CompletedProcess:
     stdout_lines = []
     with Popen(args,
                stdout=PIPE,
-               bufsize=1,
                stderr=STDOUT,
                stdin=stdin,
-               encoding=sys.stdout.encoding,
-               errors='replace'
+               bufsize=1,
+               encoding=encoding,
+               errors=errors
                ) as process:
         assert process.stdout is not None
 
         while True:
-            realtime_output = process.stdout.readline()
-            assert isinstance(realtime_output, str)
-            stdout_lines.append(realtime_output)
-            if realtime_output == '' and process.poll() is not None:
+            output = process.stdout.readline()
+            assert isinstance(output, str)
+            stdout_lines.append(output)
+            if output == '' and process.poll() is not None:
                 break
-            # if realtime_output:
-            print(realtime_output, flush=True, end='')
+            if len(output) > 0:
+                print(output, flush=True, end='')
 
         exit_code = process.wait()
 
         if check and exit_code != 0:
             raise CalledProcessError(exit_code, args)
+
+        stdout_text = '\n'.join(stdout_lines)
         return CompletedProcess(args=args, returncode=exit_code,
-                                stdout='\n'.join(stdout_lines))
-
-    ################################################################################
+                                stdout=stdout_text)
 
 
-def check_call_rt(args: Sequence[str], stdin=None):
-    print("ZZZ")
+################################################################################
+
+
+def check_call_rt(args: Sequence[str], stdin: Optional[IO[Any]] = None):
     return runcp(args, check=True, stdin=stdin)
 
 
