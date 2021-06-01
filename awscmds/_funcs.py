@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from subprocess import Popen, PIPE, CalledProcessError, \
     check_output, CompletedProcess, STDOUT
-from typing import List, Union, Optional, Sequence, IO, Any
+from typing import List, Union, Optional, Sequence, IO, Any, Dict
 
 
 ################################################################################
@@ -43,7 +43,8 @@ def runcp(args: Sequence[str],
           check=False,
           stdin: Optional[IO[Any]] = None,
           encoding: str = sys.stdout.encoding,
-          errors='replace'
+          errors='replace',
+          env: Optional[Dict[str, str]] = None
           ) -> CompletedProcess:
     stdout_lines = []
     with Popen(args,
@@ -52,7 +53,8 @@ def runcp(args: Sequence[str],
                stdin=stdin,
                bufsize=1,
                encoding=encoding,
-               errors=errors
+               errors=errors,
+                env=env
                ) as process:
         assert process.stdout is not None
 
